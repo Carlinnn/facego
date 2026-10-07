@@ -6,6 +6,89 @@
   <title>Cadastrar — FaceGo</title>
   <link rel="stylesheet" href="/web/css/app.css">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    .liveness-wrap {
+      position: relative;
+    }
+    .challenge-box {
+      position: absolute;
+      bottom: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,.75);
+      backdrop-filter: blur(6px);
+      border-radius: 10px;
+      padding: 10px 20px;
+      text-align: center;
+      width: calc(100% - 32px);
+      pointer-events: none;
+      z-index: 10;
+    }
+    .challenge-box .step-label {
+      font-size: .72rem;
+      color: #aaa;
+      margin-bottom: 4px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .challenge-box .instruction {
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .challenge-box .instruction.ok { color: #4caf7d; }
+    .challenge-box .instruction.warn { color: #f5a623; }
+
+    .progress-steps {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin: 12px 0 4px;
+    }
+    .step-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--border);
+      transition: background .3s;
+    }
+    .step-dot.done  { background: var(--success); }
+    .step-dot.active{ background: var(--accent); }
+
+    .face-indicator {
+      position: absolute;
+      top: 12px; right: 12px;
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem;
+      z-index: 10;
+    }
+    .face-indicator.found { background: rgba(76,175,125,.25); }
+    .face-indicator.none  { background: rgba(244,76,107,.25); }
+
+    .mode-tabs {
+      display: flex; gap: 8px; margin-bottom: 16px;
+    }
+    .mode-tab {
+      flex: 1; padding: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: center;
+      font-size: .9rem;
+      color: var(--text-muted);
+      transition: all .2s;
+    }
+    .mode-tab.active {
+      border-color: var(--accent);
+      color: var(--text);
+      background: rgba(108,99,255,.1);
+    }
+
+    #uploadPreview {
+      width: 100%; border-radius: 10px;
+      margin: 12px 0; display: none;
+    }
+  </style>
 </head>
 <body>
 <nav>
@@ -25,115 +108,305 @@
   </div>
 
   <div class="card">
-    <label>Imagem</label>
-    <div class="video-wrap" id="videoWrap" style="display:none">
-      <video id="video" muted playsinline></video>
+    <label>Modo</label>
+    <div class="mode-tabs">
+      <div class="mode-tab active" id="tabLiveness" onclick="setMode('liveness')">
+        Câmera com verificação
+      </div>
+      <div class="mode-tab" id="tabUpload" onclick="setMode('upload')">
+        Upload de foto
+      </div>
     </div>
-    <img id="preview" style="display:none; width:100%; border-radius:10px; margin:16px 0;" alt="preview">
 
-    <div class="btn-row">
-      <button class="btn btn-secondary" id="btnCamera">Abrir Câmera</button>
-      <button class="btn btn-secondary" id="btnCapture" style="display:none">Capturar Foto</button>
-      <label class="btn btn-secondary" style="cursor:pointer">
-        Selecionar Foto
-        <input type="file" id="fileInput" accept="image/jpeg,image/png" style="display:none">
-      </label>
+    <!-- LIVENESS MODE -->
+    <div id="livenessMode">
+      <div class="liveness-wrap">
+        <div class="video-wrap" id="videoWrap" style="display:none">
+          <video id="video" muted playsinline></video>
+          <div class="face-indicator none" id="faceIndicator">○</div>
+          <div class="challenge-box" id="challengeBox" style="display:none">
+            <div class="step-label" id="stepLabel">Passo 1 de 5</div>
+            <div class="instruction" id="instruction">Aguardando...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="progress-steps" id="progressSteps" style="display:none"></div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" id="btnCamera" onclick="toggleCamera()">Abrir Câmera</button>
+      </div>
+    </div>
+
+    <!-- UPLOAD MODE -->
+    <div id="uploadMode" style="display:none">
+      <img id="uploadPreview" alt="preview">
+      <div class="btn-row">
+        <label class="btn btn-secondary" style="cursor:pointer">
+          Selecionar Foto
+          <input type="file" id="fileInput" accept="image/jpeg,image/png" style="display:none">
+        </label>
+      </div>
     </div>
   </div>
 
   <div class="alert" id="alert"></div>
-
-  <button class="btn btn-primary" id="btnRegister" disabled style="width:100%">Cadastrar</button>
+  <button class="btn btn-primary" id="btnRegister" disabled style="width:100%; margin-top:8px">Cadastrar</button>
 </main>
 
 <script type="module">
-  import { startCamera, stopCamera, captureFrame } from '/web/js/camera.js';
+import { startCamera, stopCamera, captureFrame } from '/web/js/camera.js';
 
-  let stream = null;
-  let imageBlob = null;
+// ── state ──────────────────────────────────────────────────────────────────
+let stream       = null;
+let capturedBlob = null;
+let mode         = 'liveness';
+let livenessOk   = false;
+let polling      = null;
 
-  const video = document.getElementById('video');
-  const videoWrap = document.getElementById('videoWrap');
-  const preview = document.getElementById('preview');
-  const btnCamera = document.getElementById('btnCamera');
-  const btnCapture = document.getElementById('btnCapture');
-  const fileInput = document.getElementById('fileInput');
-  const btnRegister = document.getElementById('btnRegister');
-  const alert = document.getElementById('alert');
+// ── challenges ────────────────────────────────────────────────────────────
+const CHALLENGES = [
+  { key: 'left',    label: '← Vire o rosto para a ESQUERDA',  check: p => p.yaw < -0.20 },
+  { key: 'right',   label: '→ Vire o rosto para a DIREITA',   check: p => p.yaw >  0.20 },
+  { key: 'up',      label: '↑ Olhe para CIMA',                check: p => p.pitch < -0.12 },
+  { key: 'down',    label: '↓ Olhe para BAIXO',               check: p => p.pitch >  0.12 },
+  { key: 'center',  label: 'Olhe para FRENTE — pronto!',      check: p => Math.abs(p.yaw) < 0.10 && Math.abs(p.pitch) < 0.08 },
+];
 
-  function showAlert(msg, type) {
-    alert.className = `alert alert-${type} show`;
-    alert.textContent = msg;
-  }
+let currentStep  = 0;
+let stepHoldMs   = 0;
+const HOLD_NEEDED = 600; // ms the pose must be held
 
-  function setImage(blob) {
-    imageBlob = blob;
-    preview.src = URL.createObjectURL(blob);
-    preview.style.display = 'block';
-    btnRegister.disabled = false;
-  }
+// ── DOM refs ──────────────────────────────────────────────────────────────
+const video          = document.getElementById('video');
+const videoWrap      = document.getElementById('videoWrap');
+const faceIndicator  = document.getElementById('faceIndicator');
+const challengeBox   = document.getElementById('challengeBox');
+const stepLabel      = document.getElementById('stepLabel');
+const instruction    = document.getElementById('instruction');
+const progressSteps  = document.getElementById('progressSteps');
+const btnRegister    = document.getElementById('btnRegister');
+const alert          = document.getElementById('alert');
+let lastTickMs = 0;
 
-  btnCamera.addEventListener('click', async () => {
-    if (stream) {
-      stopCamera(stream); stream = null;
-      videoWrap.style.display = 'none';
-      btnCapture.style.display = 'none';
-      btnCamera.textContent = 'Abrir Câmera';
-      return;
-    }
-    try {
-      stream = await startCamera(video);
-      videoWrap.style.display = 'block';
-      btnCapture.style.display = 'inline-flex';
-      btnCamera.textContent = 'Fechar Câmera';
-    } catch(e) {
-      showAlert('Não foi possível acessar a câmera: ' + e.message, 'error');
-    }
-  });
+// ── mode switch ────────────────────────────────────────────────────────────
+window.setMode = function(m) {
+  mode = m;
+  document.getElementById('tabLiveness').classList.toggle('active', m === 'liveness');
+  document.getElementById('tabUpload').classList.toggle('active', m === 'upload');
+  document.getElementById('livenessMode').style.display = m === 'liveness' ? '' : 'none';
+  document.getElementById('uploadMode').style.display   = m === 'upload'   ? '' : 'none';
+  capturedBlob = null;
+  livenessOk   = false;
+  btnRegister.disabled = true;
+  stopPolling();
+  if (stream) { stopCamera(stream); stream = null; resetCameraUI(); }
+};
 
-  btnCapture.addEventListener('click', async () => {
-    const blob = await captureFrame(video);
-    setImage(blob);
+// ── camera ─────────────────────────────────────────────────────────────────
+window.toggleCamera = async function() {
+  const btn = document.getElementById('btnCamera');
+  if (stream) {
     stopCamera(stream); stream = null;
-    videoWrap.style.display = 'none';
-    btnCapture.style.display = 'none';
-    btnCamera.textContent = 'Abrir Câmera';
+    stopPolling();
+    resetCameraUI();
+    btn.textContent = 'Abrir Câmera';
+    return;
+  }
+  try {
+    stream = await startCamera(video);
+    videoWrap.style.display = 'block';
+    challengeBox.style.display = 'block';
+    progressSteps.style.display = 'flex';
+    btn.textContent = 'Fechar Câmera';
+    resetChallenge();
+    startPolling();
+  } catch(e) {
+    showAlert('Câmera indisponível: ' + e.message, 'error');
+  }
+};
+
+function resetCameraUI() {
+  videoWrap.style.display = 'none';
+  challengeBox.style.display = 'none';
+  progressSteps.style.display = 'none';
+  capturedBlob = null;
+  livenessOk = false;
+  btnRegister.disabled = true;
+}
+
+// ── progress dots ──────────────────────────────────────────────────────────
+function buildDots() {
+  progressSteps.innerHTML = CHALLENGES.map((_, i) => `<div class="step-dot" id="dot-${i}"></div>`).join('');
+  updateDots();
+}
+
+function updateDots() {
+  CHALLENGES.forEach((_, i) => {
+    const dot = document.getElementById('dot-' + i);
+    if (!dot) return;
+    dot.className = 'step-dot' + (i < currentStep ? ' done' : i === currentStep ? ' active' : '');
   });
+}
 
-  fileInput.addEventListener('change', () => {
-    if (fileInput.files[0]) setImage(fileInput.files[0]);
-  });
+function resetChallenge() {
+  currentStep = 0;
+  stepHoldMs  = 0;
+  lastTickMs  = 0;
+  livenessOk  = false;
+  buildDots();
+  showStep(0);
+}
 
-  btnRegister.addEventListener('click', async () => {
-    const name = document.getElementById('name').value.trim();
-    if (!name) { showAlert('Informe o nome.', 'error'); return; }
-    if (!imageBlob) { showAlert('Selecione ou capture uma imagem.', 'error'); return; }
+function showStep(i) {
+  if (i >= CHALLENGES.length) return;
+  stepLabel.textContent   = `Passo ${i + 1} de ${CHALLENGES.length}`;
+  instruction.textContent = CHALLENGES[i].label;
+  instruction.className   = 'instruction';
+  updateDots();
+}
 
-    btnRegister.disabled = true;
-    btnRegister.innerHTML = '<span class="spinner"></span> Cadastrando...';
+// ── polling ─────────────────────────────────────────────────────────────────
+function startPolling() {
+  stopPolling();
+  polling = setInterval(tick, 350);
+}
 
-    const form = new FormData();
-    form.append('name', name);
-    form.append('image', imageBlob, 'face.jpg');
+function stopPolling() {
+  if (polling) { clearInterval(polling); polling = null; }
+}
 
-    try {
-      const res = await fetch('/api/v1/persons', { method: 'POST', body: form });
-      const data = await res.json();
-      if (data.success) {
-        showAlert(`Rosto cadastrado com sucesso! (${data.person.name})`, 'success');
-        document.getElementById('name').value = '';
-        preview.style.display = 'none';
-        imageBlob = null;
+async function tick() {
+  if (!stream || !video.videoWidth) return;
+  const blob = await captureFrame(video);
+  const form = new FormData();
+  form.append('image', blob, 'frame.jpg');
+
+  let data;
+  try {
+    const res = await fetch('/api/v1/detect', { method: 'POST', body: form });
+    data = await res.json();
+  } catch { return; }
+
+  // face indicator
+  if (data.detected && data.faces === 1) {
+    faceIndicator.textContent = '●';
+    faceIndicator.className   = 'face-indicator found';
+  } else {
+    faceIndicator.textContent = '○';
+    faceIndicator.className   = 'face-indicator none';
+    stepHoldMs = 0;
+    instruction.className = 'instruction warn';
+    instruction.textContent = 'Nenhum rosto detectado — posicione o rosto no centro';
+    return;
+  }
+
+  if (livenessOk) return;
+  if (!data.pose)  return;
+
+  const now   = Date.now();
+  const delta = lastTickMs ? now - lastTickMs : 0;
+  lastTickMs  = now;
+
+  const ch = CHALLENGES[currentStep];
+  if (ch.check(data.pose)) {
+    stepHoldMs += delta;
+    const pct = Math.min(stepHoldMs / HOLD_NEEDED, 1);
+    instruction.className   = 'instruction ok';
+    instruction.textContent = ch.label + ' ' + (pct < 1 ? `(${Math.round(pct * 100)}%)` : '✓');
+
+    if (stepHoldMs >= HOLD_NEEDED) {
+      currentStep++;
+      stepHoldMs = 0;
+      updateDots();
+
+      if (currentStep >= CHALLENGES.length) {
+        await completeChallenge();
       } else {
-        showAlert(data.error || 'Erro ao cadastrar.', 'error');
+        showStep(currentStep);
       }
-    } catch(e) {
-      showAlert('Erro de conexão: ' + e.message, 'error');
     }
+  } else {
+    stepHoldMs = 0;
+    showStep(currentStep);
+  }
+}
 
+async function completeChallenge() {
+  stopPolling();
+  livenessOk = true;
+  instruction.className   = 'instruction ok';
+  instruction.textContent = 'Verificação concluída! Capturando...';
+
+  await new Promise(r => setTimeout(r, 300));
+  capturedBlob = await captureFrame(video);
+
+  // show captured frame as mini preview
+  const url = URL.createObjectURL(capturedBlob);
+  const prev = document.createElement('img');
+  prev.src = url;
+  prev.style.cssText = 'width:100%;border-radius:10px;margin:12px 0;';
+  videoWrap.insertAdjacentElement('afterend', prev);
+
+  instruction.textContent = '✓ Verificação concluída';
+  btnRegister.disabled = false;
+  showAlert('Verificação de vivacidade concluída. Clique em Cadastrar.', 'success');
+}
+
+// ── upload mode ────────────────────────────────────────────────────────────
+document.getElementById('fileInput').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  capturedBlob = file;
+  const preview = document.getElementById('uploadPreview');
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = 'block';
+  btnRegister.disabled = false;
+});
+
+// ── register ───────────────────────────────────────────────────────────────
+btnRegister.addEventListener('click', async () => {
+  const name = document.getElementById('name').value.trim();
+  if (!name) { showAlert('Informe o nome.', 'error'); return; }
+  if (!capturedBlob) { showAlert('Capture ou selecione uma imagem.', 'error'); return; }
+  if (mode === 'liveness' && !livenessOk) { showAlert('Complete a verificação de vivacidade.', 'error'); return; }
+
+  btnRegister.disabled = true;
+  btnRegister.innerHTML = '<span class="spinner"></span> Cadastrando...';
+
+  const form = new FormData();
+  form.append('name', name);
+  form.append('image', capturedBlob, 'face.jpg');
+
+  try {
+    const res  = await fetch('/api/v1/persons', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.success) {
+      showAlert(`Rosto de "${data.person.name}" cadastrado com sucesso!`, 'success');
+      document.getElementById('name').value = '';
+      capturedBlob = null;
+      livenessOk   = false;
+      btnRegister.disabled = true;
+      // remove capture preview
+      document.querySelectorAll('img[src^="blob:"]').forEach(el => el.remove());
+      if (mode === 'liveness') resetChallenge();
+    } else {
+      showAlert(data.error || 'Erro ao cadastrar.', 'error');
+      btnRegister.disabled = false;
+    }
+  } catch(e) {
+    showAlert('Erro de conexão: ' + e.message, 'error');
     btnRegister.disabled = false;
-    btnRegister.textContent = 'Cadastrar';
-  });
+  }
+
+  btnRegister.textContent = 'Cadastrar';
+});
+
+// ── helpers ────────────────────────────────────────────────────────────────
+function showAlert(msg, type) {
+  alert.className = `alert alert-${type} show`;
+  alert.textContent = msg;
+}
 </script>
 </body>
 </html>
