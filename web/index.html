@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FaceGo</title>
+  <link rel="stylesheet" href="/web/css/app.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<nav>
+  <a class="logo" href="/web/index.html">FACEGO</a>
+  <a href="/web/index.html" class="active">Início</a>
+  <a href="/web/register.html">Cadastrar</a>
+  <a href="/web/identify.html">Identificar</a>
+  <a href="/web/persons.html">Cadastrados</a>
+  <span class="count" id="count">-- cadastrados</span>
+</nav>
+
+<main>
+  <div class="hero">
+    <h1>FACEGO</h1>
+    <p>Sistema de reconhecimento facial — Go + ONNX + SQLite</p>
+    <div class="btn-row">
+      <a href="/web/register.html" class="btn btn-primary">Cadastrar Rosto</a>
+      <a href="/web/identify.html" class="btn btn-secondary">Identificar</a>
+    </div>
+  </div>
+</main>
+
+<script>
+  fetch('/api/v1/persons')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('count').textContent = (d.total || 0) + ' cadastrados';
+    })
+    .catch(() => {});
+</script>
+</body>
+</html>

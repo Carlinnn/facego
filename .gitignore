@@ -1,0 +1,44 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.pdb
+*.lib
+
+# Build output
+/facego
+/facego.exe
+/facego.exe~
+
+# Data (biometric data — never commit)
+data/
+
+# Models (large binary files — download separately)
+models/
+*.onnx
+
+# ONNX Runtime SDK (downloaded at setup)
+onnxruntime/
+onnxruntime_extracted/
+onnxruntime.zip
+onnxruntime.dll
+
+# Logs
+*.log
+
+# Test assets
+tests/
+
+# Project spec / notes
+facego.txt
+
+# Tools binaries
+tools/inspect_onnx/inspect_onnx.exe
+tools/inspect_onnx/onnxruntime.dll
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

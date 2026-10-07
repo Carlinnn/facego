@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Identificar — FaceGo</title>
+  <link rel="stylesheet" href="/web/css/app.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<nav>
+  <a class="logo" href="/web/index.html">FACEGO</a>
+  <a href="/web/index.html">Início</a>
+  <a href="/web/register.html">Cadastrar</a>
+  <a href="/web/identify.html" class="active">Identificar</a>
+  <a href="/web/persons.html">Cadastrados</a>
+</nav>
+
+<main>
+  <h1>Identificar</h1>
+
+  <div class="card">
+    <div class="video-wrap" id="videoWrap">
+      <video id="video" muted playsinline></video>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btnToggle">Abrir Câmera</button>
+      <button class="btn btn-primary" id="btnIdentify" disabled>Identificar</button>
+      <label class="btn btn-secondary" style="cursor:pointer">
+        Selecionar Foto
+        <input type="file" id="fileInput" accept="image/jpeg,image/png" style="display:none">
+      </label>
+    </div>
+  </div>
+
+  <div id="result" style="display:none"></div>
+</main>
+
+<script type="module">
+  import { startCamera, stopCamera, captureFrame } from '/web/js/camera.js';
+
+  let stream = null;
+  const video = document.getElementById('video');
+  const videoWrap = document.getElementById('videoWrap');
+  const btnToggle = document.getElementById('btnToggle');
+  const btnIdentify = document.getElementById('btnIdentify');
+  const fileInput = document.getElementById('fileInput');
+  const resultEl = document.getElementById('result');
+
+  videoWrap.style.display = 'none';
+
+  btnToggle.addEventListener('click', async () => {
+    if (stream) {
+      stopCamera(stream); stream = null;
+      videoWrap.style.display = 'none';
+      btnIdentify.disabled = true;
+      btnToggle.textContent = 'Abrir Câmera';
+      return;
+    }
+    try {
+      stream = await startCamera(video);
+      videoWrap.style.display = 'block';
+      btnIdentify.disabled = false;
+      btnToggle.textContent = 'Fechar Câmera';
+    } catch(e) {
+      showResult(null, 'Não foi possível acessar a câmera: ' + e.message);
+    }
+  });
+
+  btnIdentify.addEventListener('click', async () => {
+    const blob = await captureFrame(video);
+    await identify(blob);
+  });
+
+  fileInput.addEventListener('change', async () => {
+    if (fileInput.files[0]) await identify(fileInput.files[0]);
+  });
+
+  async function identify(imageBlob) {
+    btnIdentify.disabled = true;
+    btnIdentify.innerHTML = '<span class="spinner"></span>';
+    resultEl.style.display = 'none';
+
+    const form = new FormData();
+    form.append('image', imageBlob, 'face.jpg');
+
+    try {
+      const res = await fetch('/api/v1/identify', { method: 'POST', body: form });
+      const data = await res.json();
+      showResult(data, null);
+    } catch(e) {
+      showResult(null, 'Erro de conexão: ' + e.message);
+    }
+
+    btnIdentify.disabled = false;
+    btnIdentify.textContent = 'Identificar';
+  }
+
+  function showResult(data, err) {
+    resultEl.style.display = 'block';
+
+    if (err) {
+      resultEl.innerHTML = `<div class="card alert alert-error show">${err}</div>`;
+      return;
+    }
+
+    if (data.identified) {
+      const pct = Math.round(data.similarity * 100);
+      const photo = data.person.photo ? data.person.photo : '';
+      resultEl.innerHTML = `
+        <div class="card result-card">
+          ${photo ? `<img src="${photo}" alt="${data.person.name}">` : ''}
+          <div class="result-name">${data.person.name}</div>
+          <div class="similarity">Similaridade: ${pct}%</div>
+        </div>`;
+    } else {
+      resultEl.innerHTML = `
+        <div class="card result-card">
+          <div class="unknown">ROSTO NÃO IDENTIFICADO</div>
+          <p style="color:var(--text-muted);margin:16px 0">Nenhuma pessoa cadastrada corresponde ao rosto apresentado.</p>
+          <div class="btn-row" style="justify-content:center">
+            <button class="btn btn-secondary" onclick="location.reload()">Tentar Novamente</button>
+            <a href="/web/register.html" class="btn btn-primary">Cadastrar Este Rosto</a>
+          </div>
+        </div>`;
+    }
+  }
+</script>
+</body>
+</html>

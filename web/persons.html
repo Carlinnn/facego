@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cadastrados — FaceGo</title>
+  <link rel="stylesheet" href="/web/css/app.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<nav>
+  <a class="logo" href="/web/index.html">FACEGO</a>
+  <a href="/web/index.html">Início</a>
+  <a href="/web/register.html">Cadastrar</a>
+  <a href="/web/identify.html">Identificar</a>
+  <a href="/web/persons.html" class="active">Cadastrados</a>
+  <span class="count" id="count">-- cadastrados</span>
+</nav>
+
+<main>
+  <h1>Pessoas Cadastradas</h1>
+  <div class="persons-grid" id="grid">
+    <p style="color:var(--text-muted)">Carregando...</p>
+  </div>
+</main>
+
+<script>
+  async function load() {
+    const res = await fetch('/api/v1/persons');
+    const data = await res.json();
+    document.getElementById('count').textContent = (data.total || 0) + ' cadastrados';
+    const grid = document.getElementById('grid');
+
+    if (!data.persons || data.persons.length === 0) {
+      grid.innerHTML = '<p style="color:var(--text-muted)">Nenhuma pessoa cadastrada.</p>';
+      return;
+    }
+
+    grid.innerHTML = data.persons.map(p => `
+      <div class="person-tile" id="tile-${p.id}">
+        ${p.photo_path
+          ? `<img src="/faces/${p.uuid}/face.jpg" alt="${p.name}">`
+          : `<div style="width:72px;height:72px;border-radius:50%;background:var(--border);margin:0 auto 10px"></div>`}
+        <div class="name">${p.name}</div>
+        <button class="btn btn-danger" onclick="del(${p.id})">Excluir</button>
+      </div>
+    `).join('');
+  }
+
+  async function del(id) {
+    if (!confirm('Excluir esta pessoa?')) return;
+    await fetch('/api/v1/persons/' + id, { method: 'DELETE' });
+    load();
+  }
+
+  load();
+</script>
+</body>
+</html>

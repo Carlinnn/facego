@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cadastrar — FaceGo</title>
+  <link rel="stylesheet" href="/web/css/app.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+<nav>
+  <a class="logo" href="/web/index.html">FACEGO</a>
+  <a href="/web/index.html">Início</a>
+  <a href="/web/register.html" class="active">Cadastrar</a>
+  <a href="/web/identify.html">Identificar</a>
+  <a href="/web/persons.html">Cadastrados</a>
+</nav>
+
+<main>
+  <h1>Cadastrar Rosto</h1>
+
+  <div class="card">
+    <label for="name">Nome</label>
+    <input type="text" id="name" placeholder="Nome completo" autocomplete="off">
+  </div>
+
+  <div class="card">
+    <label>Imagem</label>
+    <div class="video-wrap" id="videoWrap" style="display:none">
+      <video id="video" muted playsinline></video>
+    </div>
+    <img id="preview" style="display:none; width:100%; border-radius:10px; margin:16px 0;" alt="preview">
+
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="btnCamera">Abrir Câmera</button>
+      <button class="btn btn-secondary" id="btnCapture" style="display:none">Capturar Foto</button>
+      <label class="btn btn-secondary" style="cursor:pointer">
+        Selecionar Foto
+        <input type="file" id="fileInput" accept="image/jpeg,image/png" style="display:none">
+      </label>
+    </div>
+  </div>
+
+  <div class="alert" id="alert"></div>
+
+  <button class="btn btn-primary" id="btnRegister" disabled style="width:100%">Cadastrar</button>
+</main>
+
+<script type="module">
+  import { startCamera, stopCamera, captureFrame } from '/web/js/camera.js';
+
+  let stream = null;
+  let imageBlob = null;
+
+  const video = document.getElementById('video');
+  const videoWrap = document.getElementById('videoWrap');
+  const preview = document.getElementById('preview');
+  const btnCamera = document.getElementById('btnCamera');
+  const btnCapture = document.getElementById('btnCapture');
+  const fileInput = document.getElementById('fileInput');
+  const btnRegister = document.getElementById('btnRegister');
+  const alert = document.getElementById('alert');
+
+  function showAlert(msg, type) {
+    alert.className = `alert alert-${type} show`;
+    alert.textContent = msg;
+  }
+
+  function setImage(blob) {
+    imageBlob = blob;
+    preview.src = URL.createObjectURL(blob);
+    preview.style.display = 'block';
+    btnRegister.disabled = false;
+  }
+
+  btnCamera.addEventListener('click', async () => {
+    if (stream) {
+      stopCamera(stream); stream = null;
+      videoWrap.style.display = 'none';
+      btnCapture.style.display = 'none';
+      btnCamera.textContent = 'Abrir Câmera';
+      return;
+    }
+    try {
+      stream = await startCamera(video);
+      videoWrap.style.display = 'block';
+      btnCapture.style.display = 'inline-flex';
+      btnCamera.textContent = 'Fechar Câmera';
+    } catch(e) {
+      showAlert('Não foi possível acessar a câmera: ' + e.message, 'error');
+    }
+  });
+
+  btnCapture.addEventListener('click', async () => {
+    const blob = await captureFrame(video);
+    setImage(blob);
+    stopCamera(stream); stream = null;
+    videoWrap.style.display = 'none';
+    btnCapture.style.display = 'none';
+    btnCamera.textContent = 'Abrir Câmera';
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) setImage(fileInput.files[0]);
+  });
+
+  btnRegister.addEventListener('click', async () => {
+    const name = document.getElementById('name').value.trim();
+    if (!name) { showAlert('Informe o nome.', 'error'); return; }
+    if (!imageBlob) { showAlert('Selecione ou capture uma imagem.', 'error'); return; }
+
+    btnRegister.disabled = true;
+    btnRegister.innerHTML = '<span class="spinner"></span> Cadastrando...';
+
+    const form = new FormData();
+    form.append('name', name);
+    form.append('image', imageBlob, 'face.jpg');
+
+    try {
+      const res = await fetch('/api/v1/persons', { method: 'POST', body: form });
+      const data = await res.json();
+      if (data.success) {
+        showAlert(`Rosto cadastrado com sucesso! (${data.person.name})`, 'success');
+        document.getElementById('name').value = '';
+        preview.style.display = 'none';
+        imageBlob = null;
+      } else {
+        showAlert(data.error || 'Erro ao cadastrar.', 'error');
+      }
+    } catch(e) {
+      showAlert('Erro de conexão: ' + e.message, 'error');
+    }
+
+    btnRegister.disabled = false;
+    btnRegister.textContent = 'Cadastrar';
+  });
+</script>
+</body>
+</html>
